@@ -11,51 +11,51 @@
 <body>
     <div class="app-container">
         <!-- Sidebar Navigation -->
-        <aside class="sidebar">
+        <aside class="sidebar" role="navigation" aria-label="Main navigation">
             <div class="logo">
-                <div class="logo-icon">IoT</div>
+                <div class="logo-icon" aria-hidden="true">IoT</div>
                 <div class="logo-text">
                     <h1>Gateway</h1>
                     <span>ESP32-C3 + H2</span>
                 </div>
             </div>
-            <nav class="nav-menu">
-                <a href="#dashboard" class="nav-item active" data-section="dashboard">
-                    <i class="fas fa-chart-line"></i>
+            <nav class="nav-menu" role="menubar">
+                <a href="#dashboard" class="nav-item active" data-section="dashboard" role="menuitem" aria-label="Dashboard">
+                    <i class="fas fa-chart-line" aria-hidden="true"></i>
                     <span>Dashboard</span>
                 </a>
-                <a href="#wifi" class="nav-item" data-section="wifi">
-                    <i class="fas fa-wifi"></i>
+                <a href="#wifi" class="nav-item" data-section="wifi" role="menuitem" aria-label="WiFi Settings">
+                    <i class="fas fa-wifi" aria-hidden="true"></i>
                     <span>WiFi Settings</span>
                 </a>
-                <a href="#bluetooth" class="nav-item" data-section="bluetooth">
-                    <i class="fab fa-bluetooth-b"></i>
+                <a href="#bluetooth" class="nav-item" data-section="bluetooth" role="menuitem" aria-label="Bluetooth">
+                    <i class="fab fa-bluetooth-b" aria-hidden="true"></i>
                     <span>Bluetooth</span>
                 </a>
-                <a href="#zigbee" class="nav-item" data-section="zigbee">
-                    <i class="fas fa-broadcast-tower"></i>
+                <a href="#zigbee" class="nav-item" data-section="zigbee" role="menuitem" aria-label="ZigBee Configuration">
+                    <i class="fas fa-broadcast-tower" aria-hidden="true"></i>
                     <span>ZigBee Config</span>
                 </a>
-                <a href="#mqtt" class="nav-item" data-section="mqtt">
-                    <i class="fas fa-cloud"></i>
+                <a href="#mqtt" class="nav-item" data-section="mqtt" role="menuitem" aria-label="MQTT Broker">
+                    <i class="fas fa-cloud" aria-hidden="true"></i>
                     <span>MQTT Broker</span>
                 </a>
-                <a href="#nodes" class="nav-item" data-section="nodes">
-                    <i class="fas fa-sitemap"></i>
+                <a href="#nodes" class="nav-item" data-section="nodes" role="menuitem" aria-label="Node Management">
+                    <i class="fas fa-sitemap" aria-hidden="true"></i>
                     <span>Node Management</span>
                 </a>
-                <a href="#sensors" class="nav-item" data-section="sensors">
-                    <i class="fas fa-thermometer-half"></i>
+                <a href="#sensors" class="nav-item" data-section="sensors" role="menuitem" aria-label="Sensor Data">
+                    <i class="fas fa-thermometer-half" aria-hidden="true"></i>
                     <span>Sensor Data</span>
                 </a>
-                <a href="#system" class="nav-item" data-section="system">
-                    <i class="fas fa-cogs"></i>
+                <a href="#system" class="nav-item" data-section="system" role="menuitem" aria-label="System Settings">
+                    <i class="fas fa-cogs" aria-hidden="true"></i>
                     <span>System</span>
                 </a>
             </nav>
             <div class="sidebar-footer">
                 <div class="device-info">
-                    <i class="fas fa-microchip"></i>
+                    <i class="fas fa-microchip" aria-hidden="true"></i>
                     <span>ESP32-C3/S3</span>
                 </div>
             </div>
@@ -748,27 +748,27 @@
                         <div class="card-body">
                             <div class="action-grid">
                                 <button class="action-btn" onclick="restartDevice()">
-                                    <i class="fas fa-redo"></i>
+                                    <i class="fas fa-redo" aria-hidden="true"></i>
                                     <span>Restart Device</span>
                                 </button>
                                 <button class="action-btn" onclick="factoryReset()">
-                                    <i class="fas fa-undo"></i>
+                                    <i class="fas fa-undo" aria-hidden="true"></i>
                                     <span>Factory Reset</span>
                                 </button>
                                 <button class="action-btn" onclick="checkUpdate()">
-                                    <i class="fas fa-download"></i>
+                                    <i class="fas fa-download" aria-hidden="true"></i>
                                     <span>Check for Updates</span>
                                 </button>
                                 <button class="action-btn" onclick="backupConfig()">
-                                    <i class="fas fa-download"></i>
+                                    <i class="fas fa-save" aria-hidden="true"></i>
                                     <span>Backup Config</span>
                                 </button>
                                 <button class="action-btn" onclick="restoreConfig()">
-                                    <i class="fas fa-upload"></i>
+                                    <i class="fas fa-upload" aria-hidden="true"></i>
                                     <span>Restore Config</span>
                                 </button>
                                 <button class="action-btn" onclick="exportLogs()">
-                                    <i class="fas fa-file-export"></i>
+                                    <i class="fas fa-file-export" aria-hidden="true"></i>
                                     <span>Export Logs</span>
                                 </button>
                             </div>

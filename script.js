@@ -160,14 +160,81 @@ function saveAllSettings() {
 }
 
 // Toast notification
-function showToast(message) {
+function showToast(message, type = 'success') {
     const toast = document.getElementById('toast');
+    const icon = toast.querySelector('i');
+    
+    toast.className = 'toast ' + type;
+    
+    if (type === 'success') icon.className = 'fas fa-check-circle';
+    else if (type === 'error') icon.className = 'fas fa-exclamation-circle';
+    else if (type === 'warning') icon.className = 'fas fa-exclamation-triangle';
+    else icon.className = 'fas fa-info-circle';
+    
     document.getElementById('toastMessage').textContent = message;
     toast.classList.add('show');
     
     setTimeout(() => {
         toast.classList.remove('show');
     }, 3000);
+}
+
+// Loading state for buttons
+function setLoading(button, loading = true) {
+    if (loading) {
+        button.classList.add('loading');
+        button.dataset.originalText = button.innerHTML;
+        button.innerHTML = '';
+    } else {
+        button.classList.remove('loading');
+        button.innerHTML = button.dataset.originalText;
+    }
+}
+
+// Confirm Modal
+let confirmCallback = null;
+
+function showConfirm(title, message, type = 'warning', callback = null) {
+    const modal = document.getElementById('confirmModal') || createConfirmModal();
+    const modalIcon = modal.querySelector('.modal-icon');
+    const modalTitle = modal.querySelector('.modal-title');
+    const modalText = modal.querySelector('.modal-text');
+    const confirmBtn = modal.querySelector('.confirm-btn');
+    
+    modalIcon.className = 'modal-icon ' + type;
+    modalTitle.textContent = title;
+    modalText.textContent = message;
+    
+    confirmBtn.className = 'btn ' + (type === 'danger' ? 'btn-danger' : 'btn-primary');
+    confirmCallback = callback;
+    
+    modal.classList.add('active');
+}
+
+function createConfirmModal() {
+    const modal = document.createElement('div');
+    modal.id = 'confirmModal';
+    modal.className = 'modal confirm-modal';
+    modal.innerHTML = `
+        <div class="modal-content">
+            <div class="modal-body" style="text-align: center;">
+                <div class="modal-icon warning"><i class="fas fa-exclamation-triangle"></i></div>
+                <h3 class="modal-title" style="margin-bottom: 8px;">Confirm Action</h3>
+                <p class="modal-text" style="color: var(--text-secondary); margin-bottom: 24px;">Are you sure?</p>
+                <div style="display: flex; gap: 12px; justify-content: center;">
+                    <button class="btn btn-secondary" onclick="closeModal('confirmModal')">Cancel</button>
+                    <button class="btn btn-primary confirm-btn" onclick="executeConfirm()">Confirm</button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.querySelector('.app-container').appendChild(modal);
+    return modal;
+}
+
+function executeConfirm() {
+    closeModal('confirmModal');
+    if (confirmCallback) confirmCallback();
 }
 
 // Dashboard functions
@@ -291,13 +358,23 @@ function scanBLE() {
         { name: 'Smart Watch', address: 'DD:EE:FF:77:88:99', rssi: -58 }
     ];
     
-    bleDevices.innerHTML = devices.map(device => `
-        <div class="device-item">
-            <div class="device-name">${device.name}</div>
-            <div class="device-status">${device.address}</div>
-            <div style="font-size: 0.75rem; color: var(--text-muted);">RSSI: ${device.rssi} dBm</div>
-        </div>
-    `).join('');
+    if (devices.length === 0) {
+        bleDevices.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-bluetooth-b"></i>
+                <h4>No Devices Found</h4>
+                <p>No BLE devices in range. Try scanning again.</p>
+            </div>
+        `;
+    } else {
+        bleDevices.innerHTML = devices.map(device => `
+            <div class="device-item">
+                <div class="device-name">${device.name}</div>
+                <div class="device-status">${device.address}</div>
+                <div style="font-size: 0.75rem; color: var(--text-muted);">RSSI: ${device.rssi} dBm</div>
+            </div>
+        `).join('');
+    }
     
     showToast('BLE scan completed');
 }
@@ -375,6 +452,17 @@ function renderNodeList() {
             n.name.toLowerCase().includes(search) || 
             n.description.toLowerCase().includes(search)
         );
+    }
+    
+    if (filteredNodes.length === 0) {
+        nodeList.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-sitemap"></i>
+                <h4>No Nodes Found</h4>
+                <p>${search ? 'No nodes match your search.' : 'No nodes registered yet.'}</p>
+            </div>
+        `;
+        return;
     }
     
     nodeList.innerHTML = filteredNodes.map(node => `
@@ -510,40 +598,45 @@ function refreshSensorData() {
 
 // System functions
 function restartDevice() {
-    if (confirm('Are you sure you want to restart the device?')) {
-        showToast('Device restarting...');
-        // In real implementation, send restart command to ESP32
-    }
+    showConfirm(
+        'Restart Device',
+        'Are you sure you want to restart the gateway? All connections will be temporarily lost.',
+        'warning',
+        () => {
+            showToast('Device restarting...', 'info');
+        }
+    );
 }
 
 function factoryReset() {
-    if (confirm('WARNING: This will reset all settings to factory defaults. Continue?')) {
-        showToast('Factory reset initiated...');
-        // In real implementation, send factory reset command to ESP32
-    }
+    showConfirm(
+        'Factory Reset',
+        'WARNING: This will erase ALL settings, unpair ALL nodes, and restore factory defaults. This action CANNOT be undone!',
+        'danger',
+        () => {
+            showToast('Factory reset initiated...', 'warning');
+        }
+    );
 }
 
 function checkUpdate() {
-    showToast('Checking for updates...');
-    // Simulate update check
+    showToast('Checking for updates...', 'info');
+    setLoading(document.querySelector('.action-btn[onclick="checkUpdate()"]'));
     setTimeout(() => {
-        showToast('You are running the latest version (v1.2.3)');
+        showToast('You are running the latest version (v1.2.3)', 'success');
     }, 1500);
 }
 
 function backupConfig() {
-    showToast('Configuration backup downloaded');
-    // In real implementation, download config file
+    showToast('Configuration backup downloaded', 'success');
 }
 
 function restoreConfig() {
-    showToast('Please select a configuration file to restore');
-    // In real implementation, open file picker
+    showToast('Please select a configuration file to restore', 'info');
 }
 
 function exportLogs() {
-    showToast('System logs exported');
-    // In real implementation, download log file
+    showToast('System logs exported', 'success');
 }
 
 // Uptime counter
