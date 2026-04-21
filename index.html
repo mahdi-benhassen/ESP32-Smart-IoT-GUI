@@ -13,8 +13,11 @@
         <!-- Sidebar Navigation -->
         <aside class="sidebar">
             <div class="logo">
-                <i class="fas fa-network-wired"></i>
-                <span>IoT Gateway</span>
+                <div class="logo-icon">IoT</div>
+                <div class="logo-text">
+                    <h1>Gateway</h1>
+                    <span>ESP32-C3 + H2</span>
+                </div>
             </div>
             <nav class="nav-menu">
                 <a href="#dashboard" class="nav-item active" data-section="dashboard">
@@ -69,16 +72,9 @@
                     <h1 id="pageTitle">Dashboard</h1>
                 </div>
                 <div class="header-right">
-                    <div class="status-indicator">
-                        <span class="status-dot online"></span>
-                        <span>Gateway Online</span>
-                    </div>
-                    <button class="btn btn-icon" id="refreshBtn">
-                        <i class="fas fa-sync-alt"></i>
-                    </button>
-                    <button class="btn btn-primary" id="saveAllBtn">
-                        <i class="fas fa-save"></i>
-                        Save All
+                    <span class="status-badge">System Online</span>
+                    <button class="btn btn-secondary" id="refreshBtn">
+                        <i class="fas fa-sync-alt"></i> Refresh
                     </button>
                 </div>
             </header>
