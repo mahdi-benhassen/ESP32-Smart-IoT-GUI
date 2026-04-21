@@ -1,5 +1,114 @@
 // ESP32 IoT Gateway Configuration Interface
 
+// API Client
+class GatewayAPI {
+    constructor(baseUrl = '') {
+        this.baseUrl = baseUrl || window.location.origin.split('/').slice(0, -1).join('/') || 'http://192.168.1.100';
+        this.token = localStorage.getItem('gateway_token') || 'esp32-gateway-token';
+        this.eventSource = null;
+        this.eventHandlers = new Map();
+        this.connected = false;
+    }
+
+    setToken(token) {
+        this.token = token;
+        localStorage.setItem('gateway_token', token);
+    }
+
+    async request(endpoint, options = {}) {
+        const url = `${this.baseUrl}/api/v1${endpoint}`;
+        try {
+            const response = await fetch(url, {
+                ...options,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${this.token}`,
+                    ...options.headers
+                }
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                if (data.error?.code === 'UNAUTHORIZED') {
+                    showToast('Authentication failed. Check token.', 'error');
+                }
+                throw new Error(data.error?.message || 'Request failed');
+            }
+            return data;
+        } catch (error) {
+            console.error('API Error:', error);
+            throw error;
+        }
+    }
+
+    async get(endpoint) { return this.request(endpoint, { method: 'GET' }); }
+    async post(endpoint, data = {}) { return this.request(endpoint, { method: 'POST', body: JSON.stringify(data) }); }
+    async put(endpoint, data = {}) { return this.request(endpoint, { method: 'PUT', body: JSON.stringify(data) }); }
+    async delete(endpoint) { return this.request(endpoint, { method: 'DELETE' }); }
+
+    // System
+    async getSystemInfo() { return this.get('/system/info'); }
+    async getSystemStatus() { return this.get('/system/status'); }
+    async restartDevice() { return this.post('/system/restart'); }
+    async factoryReset() { return this.post('/system/reset'); }
+
+    // WiFi
+    async getWifiConfig() { return this.get('/wifi/config'); }
+    async updateWifiConfig(config) { return this.put('/wifi/config', config); }
+    async scanWifi() { return this.post('/wifi/scan'); }
+    async getWifiNetworks() { return this.get('/wifi/networks'); }
+
+    // Bluetooth
+    async getBluetoothConfig() { return this.get('/bt/config'); }
+    async updateBluetoothConfig(config) { return this.put('/bt/config', config); }
+    async scanBLE() { return this.post('/bt/scan'); }
+    async getBleDevices() { return this.get('/bt/devices'); }
+
+    // ZigBee
+    async getZigbeeConfig() { return this.get('/zigbee/config'); }
+    async updateZigbeeConfig(config) { return this.put('/zigbee/config', config); }
+    async getZigbeeNodes() { return this.get('/zigbee/nodes'); }
+    async permitJoin(duration = 60) { return this.post('/zigbee/permit-join', { duration }); }
+    async removeZigbeeNode(shortAddr) { return this.delete(`/zigbee/node/${shortAddr}`); }
+
+    // MQTT
+    async getMqttConfig() { return this.get('/mqtt/config'); }
+    async updateMqttConfig(config) { return this.put('/mqtt/config', config); }
+    async testMqtt() { return this.post('/mqtt/test'); }
+    async publishMqtt(topic, payload, qos = 1) { return this.post('/mqtt/publish', { topic, payload, qos }); }
+
+    // Sensors
+    async getSensors() { return this.get('/sensors'); }
+    async getSensor(id) { return this.get(`/sensors/${id}`); }
+    async getSensorHistory(id, from, to, interval = 60) { return this.get(`/sensors/history?id=${id}&from=${from}&to=${to}&interval=${interval}`); }
+
+    // Events
+    connectEvents() {
+        if (this.eventSource) this.eventSource.close();
+        const url = `${this.baseUrl}/api/v1/events/stream?token=${this.token}`;
+        this.eventSource = new EventSource(url);
+        this.eventSource.onopen = () => { this.connected = true; };
+        this.eventSource.onerror = () => {
+            this.connected = false;
+            setTimeout(() => this.connectEvents(), 5000);
+        };
+        ['sensor_update', 'node_joined', 'node_left', 'mqtt_message', 'zigbee_message', 'system_alert'].forEach(type => {
+            this.eventSource.addEventListener(type, (e) => {
+                const handler = this.eventHandlers.get(type);
+                if (handler) handler(JSON.parse(e.data));
+            });
+        });
+    }
+
+    disconnectEvents() {
+        if (this.eventSource) { this.eventSource.close(); this.eventSource = null; }
+    }
+
+    on(event, handler) { this.eventHandlers.set(event, handler); }
+    off(event) { this.eventHandlers.delete(event); }
+}
+
+const api = new GatewayAPI();
+
 // Sample data for demonstration
 let nodes = [
     { id: 1, name: 'Gateway Main', type: 'gateway', mac: 'AA:BB:CC:DD:EE:01', parent: '', enabled: true, description: 'Main gateway node' },
@@ -25,6 +134,32 @@ document.addEventListener('DOMContentLoaded', function() {
     renderZigbeeDevices();
     renderTopology();
     startUptimeCounter();
+    
+    // Connect to event stream
+    try {
+        api.connectEvents();
+        
+        api.on('sensor_update', (data) => {
+            const sensorEl = document.querySelector(`[data-sensor="${data.id}"]`);
+            if (sensorEl) sensorEl.textContent = `${data.value}${data.unit || ''}`;
+        });
+        
+        api.on('node_joined', (data) => {
+            showToast(`New node joined: ${data.short_addr}`, 'info');
+            renderZigbeeDevices();
+        });
+        
+        api.on('node_left', (data) => {
+            showToast(`Node left: ${data.short_addr}`, 'warning');
+            renderZigbeeDevices();
+        });
+        
+        api.on('system_alert', (data) => {
+            showToast(data.message, 'warning');
+        });
+    } catch (error) {
+        console.log('Event stream not available (API offline mode)');
+    }
 });
 
 // Navigation
@@ -238,17 +373,23 @@ function executeConfirm() {
 }
 
 // Dashboard functions
-function loadDashboardData() {
-    // Simulate loading dashboard data
-    updateStats();
+async function loadDashboardData() {
+    try {
+        const status = await api.getSystemStatus();
+        document.getElementById('wifiStatus').textContent = status.wifi?.connected ? 'Connected' : 'Disconnected';
+        document.getElementById('zigbeeNodes').textContent = status.zigbee?.node_count || '0';
+        document.getElementById('mqttStatus').textContent = status.mqtt?.connected ? 'Connected' : 'Disconnected';
+        document.getElementById('btStatus').textContent = status.bluetooth?.enabled ? 'Enabled' : 'Disabled';
+    } catch (error) {
+        document.getElementById('wifiStatus').textContent = 'Unknown';
+        document.getElementById('zigbeeNodes').textContent = '?';
+        document.getElementById('mqttStatus').textContent = 'Unknown';
+        document.getElementById('btStatus').textContent = 'Unknown';
+    }
 }
 
 function updateStats() {
-    // Update statistics cards with real data from ESP32
-    document.getElementById('wifiStatus').textContent = 'Connected';
-    document.getElementById('zigbeeNodes').textContent = zigbeeDevices.length.toString();
-    document.getElementById('mqttStatus').textContent = 'Connected';
-    document.getElementById('btStatus').textContent = 'Enabled';
+    loadDashboardData();
 }
 
 function renderTopology() {
@@ -289,39 +430,47 @@ function getNodeTypeIcon(type) {
 }
 
 // WiFi functions
-function scanWiFi() {
+async function scanWiFi() {
     const scanResults = document.getElementById('scanResults');
     const wifiScanTable = document.getElementById('wifiScanTable');
+    const scanBtn = event?.target?.closest('button') || document.querySelector('[onclick="scanWiFi()"]');
     
-    // Simulate WiFi scan
-    const networks = [
-        { ssid: 'Home_Network', signal: -45, security: 'WPA2', channel: 6 },
-        { ssid: 'Neighbor_WiFi', signal: -72, security: 'WPA2', channel: 11 },
-        { ssid: 'Guest_Network', signal: -58, security: 'WPA2', channel: 1 },
-        { ssid: 'IoT_Devices', signal: -50, security: 'WPA3', channel: 6 }
-    ];
+    if (scanBtn) setLoading(scanBtn, true);
     
-    wifiScanTable.innerHTML = networks.map(net => `
-        <tr>
-            <td>${net.ssid}</td>
-            <td>
-                <div style="display: flex; align-items: center; gap: 8px;">
-                    <div style="width: 40px; height: 4px; background: #334155; border-radius: 2px;">
-                        <div style="width: ${getSignalStrength(getSignalBars(net.signal))}%; height: 100%; background: ${getSignalColor(net.signal)}; border-radius: 2px;"></div>
-                    </div>
-                    <span>${net.signal} dBm</span>
-                </div>
-            </td>
-            <td>${net.security}</td>
-            <td>${net.channel}</td>
-            <td>
-                <button class="btn btn-primary" onclick="selectNetwork('${net.ssid}')">Connect</button>
-            </td>
-        </tr>
-    `).join('');
-    
-    scanResults.style.display = 'block';
-    showToast('WiFi scan completed');
+    try {
+        const result = await api.scanWifi();
+        const networks = result.networks || [];
+        
+        if (networks.length === 0) {
+            wifiScanTable.innerHTML = '<tr><td colspan="5" style="text-align: center;">No networks found</td></tr>';
+        } else {
+            wifiScanTable.innerHTML = networks.map(net => `
+                <tr>
+                    <td>${net.ssid}</td>
+                    <td>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <div style="width: 40px; height: 4px; background: #334155; border-radius: 2px;">
+                                <div style="width: ${getSignalStrength(getSignalBars(net.rssi))}%; height: 100%; background: ${getSignalColor(net.rssi)}; border-radius: 2px;"></div>
+                            </div>
+                            <span>${net.rssi} dBm</span>
+                        </div>
+                    </td>
+                    <td>${net.security}</td>
+                    <td>${net.channel}</td>
+                    <td>
+                        <button class="btn btn-primary" onclick="selectNetwork('${net.ssid}')">Connect</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+        
+        scanResults.style.display = 'block';
+        showToast(`Found ${networks.length} networks`, 'success');
+    } catch (error) {
+        showToast('WiFi scan failed', 'error');
+    } finally {
+        if (scanBtn) setLoading(scanBtn, false);
+    }
 }
 
 function getSignalBars(signal) {
@@ -336,103 +485,164 @@ function getSignalStrength(bars) {
 }
 
 function getSignalColor(signal) {
-    if (signal > -50) return '#10B981';
-    if (signal > -60) return '#F59E0B';
-    return '#EF4444';
+    if (signal > -50) return 'var(--success-color)';
+    if (signal > -60) return 'var(--warning-color)';
+    return 'var(--danger-color)';
 }
 
 function selectNetwork(ssid) {
     document.getElementById('ssid').value = ssid;
-    showToast(`Selected network: ${ssid}`);
+    showToast(`Selected network: ${ssid}`, 'success');
     document.getElementById('scanResults').style.display = 'none';
 }
 
 // Bluetooth functions
-function scanBLE() {
+async function scanBLE() {
     const bleDevices = document.getElementById('bleDevices');
+    const scanBtn = event?.target?.closest('button') || document.querySelector('[onclick="scanBLE()"]');
     
-    // Simulate BLE scan
-    const devices = [
-        { name: 'ESP32-Node-01', address: 'AA:BB:CC:11:22:33', rssi: -65 },
-        { name: 'ESP32-Node-02', address: 'AA:BB:CC:44:55:66', rssi: -72 },
-        { name: 'Smart Watch', address: 'DD:EE:FF:77:88:99', rssi: -58 }
-    ];
+    if (scanBtn) setLoading(scanBtn, true);
     
-    if (devices.length === 0) {
+    try {
+        await api.scanBLE();
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        const result = await api.getBleDevices();
+        const devices = result.devices || [];
+        
+        if (devices.length === 0) {
+            bleDevices.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-bluetooth-b"></i>
+                    <h4>No Devices Found</h4>
+                    <p>No BLE devices in range. Try scanning again.</p>
+                </div>
+            `;
+        } else {
+            bleDevices.innerHTML = devices.map(device => `
+                <div class="device-item">
+                    <div class="device-name">${device.name}</div>
+                    <div class="device-status">${device.address}</div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted);">RSSI: ${device.rssi} dBm</div>
+                </div>
+            `).join('');
+        }
+        
+        showToast(`Found ${devices.length} BLE devices`, 'success');
+    } catch (error) {
         bleDevices.innerHTML = `
             <div class="empty-state">
-                <i class="fas fa-bluetooth-b"></i>
-                <h4>No Devices Found</h4>
-                <p>No BLE devices in range. Try scanning again.</p>
+                <i class="fas fa-exclamation-triangle"></i>
+                <h4>Scan Failed</h4>
+                <p>Could not scan for BLE devices.</p>
             </div>
         `;
-    } else {
-        bleDevices.innerHTML = devices.map(device => `
-            <div class="device-item">
-                <div class="device-name">${device.name}</div>
-                <div class="device-status">${device.address}</div>
-                <div style="font-size: 0.75rem; color: var(--text-muted);">RSSI: ${device.rssi} dBm</div>
-            </div>
-        `).join('');
+        showToast('BLE scan failed', 'error');
+    } finally {
+        if (scanBtn) setLoading(scanBtn, false);
     }
-    
-    showToast('BLE scan completed');
 }
 
 // ZigBee functions
-function renderZigbeeDevices() {
+async function renderZigbeeDevices() {
     const deviceGrid = document.getElementById('zigbeeDevices');
     
-    deviceGrid.innerHTML = zigbeeDevices.map(device => `
-        <div class="device-item">
-            <div class="device-name">${device.name}</div>
-            <div style="font-size: 0.75rem; color: var(--text-muted);">ID: ${device.id}</div>
-            <div class="device-status" style="color: ${device.status === 'online' ? 'var(--success-color)' : 'var(--danger-color)'}">
-                ${device.status === 'online' ? '● Online' : '○ Offline'}
+    try {
+        const result = await api.getZigbeeNodes();
+        const nodes = result.nodes || [];
+        
+        if (nodes.length === 0) {
+            deviceGrid.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-broadcast-tower"></i>
+                    <h4>No ZigBee Devices</h4>
+                    <p>Click "Permit Join" to add new devices.</p>
+                </div>
+            `;
+        } else {
+            deviceGrid.innerHTML = nodes.map(node => `
+                <div class="device-item">
+                    <div class="device-name">${node.name || node.short_addr}</div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted);">ID: ${node.short_addr}</div>
+                    <div class="device-status" style="color: var(--success-color)">● Online</div>
+                    ${node.battery ? `<div style="font-size: 0.75rem;">Battery: ${node.battery}%</div>` : ''}
+                </div>
+            `).join('');
+        }
+    } catch (error) {
+        deviceGrid.innerHTML = zigbeeDevices.map(device => `
+            <div class="device-item">
+                <div class="device-name">${device.name}</div>
+                <div style="font-size: 0.75rem; color: var(--text-muted);">ID: ${device.id}</div>
+                <div class="device-status" style="color: ${device.status === 'online' ? 'var(--success-color)' : 'var(--danger-color)'}">
+                    ${device.status === 'online' ? '● Online' : '○ Offline'}
+                </div>
+                ${device.battery ? `<div style="font-size: 0.75rem;">Battery: ${device.battery}%</div>` : ''}
             </div>
-            ${device.battery ? `<div style="font-size: 0.75rem;">Battery: ${device.battery}%</div>` : ''}
-        </div>
-    `).join('');
+        `).join('');
+    }
 }
 
-function permitJoin() {
-    showToast('Permitting new devices to join for 60 seconds...');
-    // In real implementation, this would enable ZigBee joining mode
+async function permitJoin() {
+    const permitBtn = event?.target?.closest('button') || document.querySelector('[onclick="permitJoin()"]');
+    if (permitBtn) setLoading(permitBtn, true);
+    
+    try {
+        await api.permitJoin(60);
+        showToast('Permit join enabled for 60 seconds', 'success');
+    } catch (error) {
+        showToast('Failed to enable permit join', 'error');
+    } finally {
+        if (permitBtn) setLoading(permitBtn, false);
+    }
 }
 
 // MQTT functions
-function testMQTT() {
+async function testMQTT() {
     const consoleOutput = document.getElementById('consoleOutput');
     const timestamp = new Date().toLocaleTimeString();
     
-    consoleOutput.innerHTML += `
-        <div class="console-line system">[${timestamp}] Testing connection to broker...</div>
-        <div class="console-line system">[${timestamp}] Connected to broker.iot.local:1883</div>
-        <div class="console-line message">[${timestamp}] Test message published to iot/gateway/test</div>
-    `;
+    try {
+        const result = await api.testMqtt();
+        consoleOutput.innerHTML += `
+            <div class="console-line console-success">[${timestamp}] Connection successful! (${result.latency_ms}ms)</div>
+        `;
+        showToast('MQTT connection successful!', 'success');
+    } catch (error) {
+        consoleOutput.innerHTML += `
+            <div class="console-line console-error">[${timestamp}] Connection failed</div>
+        `;
+        showToast('MQTT connection failed', 'error');
+    }
     
     consoleOutput.scrollTop = consoleOutput.scrollHeight;
-    showToast('MQTT connection successful!');
 }
 
-function publishMQTT() {
+async function publishMQTT() {
     const topic = document.getElementById('publishTopic').value || 'iot/gateway/manual';
     const message = document.getElementById('publishMessage').value;
     const consoleOutput = document.getElementById('consoleOutput');
     const timestamp = new Date().toLocaleTimeString();
     
     if (!message) {
-        showToast('Please enter a message');
+        showToast('Please enter a message', 'warning');
         return;
     }
     
-    consoleOutput.innerHTML += `
-        <div class="console-line message">[${timestamp}] Publishing to ${topic}: ${message}</div>
-    `;
+    try {
+        await api.publishMqtt(topic, message);
+        consoleOutput.innerHTML += `
+            <div class="console-line console-success">[${timestamp}] Published to ${topic}: ${message}</div>
+        `;
+        document.getElementById('publishMessage').value = '';
+        showToast('Message published!', 'success');
+    } catch (error) {
+        consoleOutput.innerHTML += `
+            <div class="console-line console-error">[${timestamp}] Publish failed: ${error.message}</div>
+        `;
+        showToast('Failed to publish message', 'error');
+    }
     
     consoleOutput.scrollTop = consoleOutput.scrollHeight;
-    document.getElementById('publishMessage').value = '';
-    showToast('Message published!');
 }
 
 // Node Management functions
